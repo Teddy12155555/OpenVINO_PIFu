@@ -249,6 +249,9 @@ class TrainDataset(Dataset):
             random.seed(1991)
             np.random.seed(1991)
             torch.manual_seed(1991)
+
+        #print('*********************** DEBUG ********************************')
+        #print(subject)
         mesh = self.mesh_dic[subject]
         surface_points, _ = trimesh.sample.sample_surface(mesh, 4 * self.num_sample_inout)
         sample_points = surface_points + np.random.normal(scale=self.opt.sigma, size=surface_points.shape)
@@ -256,9 +259,10 @@ class TrainDataset(Dataset):
         # add random points within image space
         length = self.B_MAX - self.B_MIN
         random_points = np.random.rand(self.num_sample_inout // 4, 3) * length + self.B_MIN
+        
         sample_points = np.concatenate([sample_points, random_points], 0)
         np.random.shuffle(sample_points)
-
+        
         inside = mesh.contains(sample_points)
         inside_points = sample_points[inside]
         outside_points = sample_points[np.logical_not(inside)]

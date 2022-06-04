@@ -60,6 +60,7 @@ def gen_mesh(opt, net, cuda, data, save_path, use_octree=True):
 
         verts, faces, _, _ = reconstruction(
             net, cuda, calib_tensor, opt.resolution, b_min, b_max, use_octree=use_octree)
+            
         verts_tensor = torch.from_numpy(verts.T).unsqueeze(0).to(device=cuda).float()
         xyz_tensor = net.projection(verts_tensor, calib_tensor[:1])
         uv = xyz_tensor[:, :2, :]
@@ -70,10 +71,13 @@ def gen_mesh(opt, net, cuda, data, save_path, use_octree=True):
         print(e)
         print('Can not create marching cubes at this time.')
 
+"""
+核心
+"""
 def gen_mesh_color(opt, netG, netC, cuda, data, save_path, use_octree=True):
     image_tensor = data['img'].to(device=cuda)
     calib_tensor = data['calib'].to(device=cuda)
-
+    
     netG.filter(image_tensor)
     netC.filter(image_tensor)
     netC.attach(netG.get_im_feat())
@@ -88,6 +92,7 @@ def gen_mesh_color(opt, netG, netC, cuda, data, save_path, use_octree=True):
             save_img_list.append(save_img)
         save_img = np.concatenate(save_img_list, axis=1)
         Image.fromarray(np.uint8(save_img[:,:,::-1])).save(save_img_path)
+        
 
         verts, faces, _, _ = reconstruction(
             netG, cuda, calib_tensor, opt.resolution, b_min, b_max, use_octree=use_octree)

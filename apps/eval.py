@@ -60,8 +60,13 @@ class Evaluator:
         self.cuda = cuda
         self.netG = netG
         self.netC = netC
+        
 
     def load_image(self, image_path, mask_path):
+        """
+        這裡把 image 跟 mask 都讀進來，還有一些相機參數，最後把照片乘上 mask 這樣就只會有人的圖像而
+        不會有背景
+        """
         # Name
         img_name = os.path.splitext(os.path.basename(image_path))[0]
         # Calib
@@ -78,6 +83,7 @@ class Evaluator:
         image = Image.open(image_path).convert('RGB')
         image = self.to_tensor(image)
         image = mask.expand_as(image) * image
+        # Return JSON 
         return {
             'name': img_name,
             'img': image.unsqueeze(0),
@@ -94,6 +100,8 @@ class Evaluator:
         :return:
         '''
         opt = self.opt
+        #self.netG.weight2ONNX()
+        
         with torch.no_grad():
             self.netG.eval()
             if self.netC:
@@ -101,9 +109,10 @@ class Evaluator:
             save_path = '%s/%s/result_%s.obj' % (opt.results_path, opt.name, data['name'])
             if self.netC:
                 gen_mesh_color(opt, self.netG, self.netC, self.cuda, data, save_path, use_octree=use_octree)
+                #gen_mesh(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
             else:
                 gen_mesh(opt, self.netG, self.cuda, data, save_path, use_octree=use_octree)
-
+            
 
 if __name__ == '__main__':
     evaluator = Evaluator(opt)
@@ -111,13 +120,17 @@ if __name__ == '__main__':
     test_images = glob.glob(os.path.join(opt.test_folder_path, '*'))
     test_images = [f for f in test_images if ('png' in f or 'jpg' in f) and (not 'mask' in f)]
     test_masks = [f[:-4]+'_mask.png' for f in test_images]
-
-    print("num; ", len(test_masks))
-
+    print(opt.__dict__)
     for image_path, mask_path in tqdm.tqdm(zip(test_images, test_masks)):
         try:
-            print(image_path, mask_path)
+            """
+            輸入準備
+            """
             data = evaluator.load_image(image_path, mask_path)
+            """
+            Inference
+            """
             evaluator.eval(data, True)
+            print('Done')
         except Exception as e:
            print("error:", e.args)

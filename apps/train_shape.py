@@ -101,7 +101,8 @@ def train(opt):
                 sample_tensor = reshape_sample_tensor(sample_tensor, opt.num_views)
 
             label_tensor = train_data['labels'].to(device=cuda)
-
+            print('----- DEBUG -----')
+            print(image_tensor.shape)
             res, error = netG.forward(image_tensor, sample_tensor, calib_tensor, labels=label_tensor)
 
             optimizerG.zero_grad()
