@@ -15,6 +15,10 @@ RESOLUTION = 256
 TEST_FOLDER_PATH = "./input_images"
 RESULTS_PATH = "./results"
 Z_SIZE = 200.0
+DEVICE = 'cpu'
+OV_DEVICE = 'CPU'
+HGFITER = './OV_model/FP16//HGFilter.xml'
+SC = './OV_model/FP16/SurfaceClassifier.xml'
 
 
 def load_image(image_path, mask_path):
@@ -218,9 +222,9 @@ class HGPIFuNet(nn.Module):
         #  OV field  #
         ##############
         self.core = Core()
-        self.device_name = 'CPU'
-        self.HGF_path = './OV_model/FP16//HGFilter.xml'
-        self.SC_path = './OV_model/FP16/SurfaceClassifier.xml'
+        self.device_name = OV_DEVICE
+        self.HGF_path = HGFITER
+        self.SC_path = SC
         self.OV_int()
         
         self.im_feat_list = []
@@ -253,11 +257,11 @@ class HGPIFuNet(nn.Module):
         st = timeit.default_timer()
         for i, (k, v) in enumerate(results.items()):
             if i == 3:
-                temp = torch.tensor(v).to('cpu')
+                temp = torch.tensor(v).to(DEVICE)
             if i == 4:
-                self.tmpx = torch.tensor(v).to('cpu')
+                self.tmpx = torch.tensor(v).to(DEVICE)
             if i == 5:
-                self.normx = torch.tensor(v).to('cpu')
+                self.normx = torch.tensor(v).to(DEVICE)
         
         self.time_benchmark += timeit.default_timer() - st
 
@@ -294,7 +298,7 @@ class HGPIFuNet(nn.Module):
             result = infer_request.get_output_tensor()
             
             st = timeit.default_timer()
-            result_ten = torch.Tensor(result.data[:]).to('cpu')
+            result_ten = torch.Tensor(result.data[:]).to(DEVICE)
             self.time_benchmark += timeit.default_timer() - st
             
             pred = in_img[:,None].float() * result_ten
@@ -316,9 +320,9 @@ if __name__ == '__main__':
 
     data = load_image(IMAGE_PATH, MASK_PATH)
 
-    netG = HGPIFuNet().to(device='cpu')
+    netG = HGPIFuNet().to(device=DEVICE)
 
     save_path = '%s/%s/result_notebook_version_%s.obj' % (RESULTS_PATH, NAME, data['name'])
     st = timeit.default_timer()
-    gen_mesh(netG, 'cpu', data, save_path=save_path, use_octree=True)
+    gen_mesh(netG, DEVICE, data, save_path=save_path, use_octree=True)
     print('Time Cost: ', timeit.default_timer() - st)
