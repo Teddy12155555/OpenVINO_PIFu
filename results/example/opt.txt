@@ -1,5 +1,5 @@
 {
-  "dataroot": "./data/processed/",
+  "dataroot": "./data",
   "loadSize": 512,
   "name": "example",
   "debug": false,
@@ -51,9 +51,9 @@
     3
   ],
   "use_tanh": false,
-  "random_flip": true,
-  "random_trans": true,
-  "random_scale": true,
+  "random_flip": false,
+  "random_trans": false,
+  "random_scale": false,
   "no_residual": false,
   "schedule": [
     60,
