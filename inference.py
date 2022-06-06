@@ -156,21 +156,43 @@ def reconstruction(net, cuda, calib_tensor,
     sdf = eval_grid_octree(coords, eval_func, num_samples=num_samples)
 
     # Finally we do marching cubes
-    try:
-        verts, faces, normals, values = measure.marching_cubes_lewiner(sdf, 0.5)
-        # transform verts into world coordinate system
-        verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
-        verts = verts.T
-        return verts, faces, normals, values
-    except:
-        print('error cannot marching cubes')
-        return -1
+    #try:
+    verts, faces, normals, values = measure.marching_cubes_lewiner(sdf, 0.5)
+    # transform verts into world coordinate system
+    verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
+    verts = verts.T
+    return verts, faces, normals, values
+    # except:
+    #     print('error cannot marching cubes')
+    #     return -1
 
 def index(feat, uv):
+    cust_core = Core()
+    cust_core.add_extension('./OV_model/libuser_cpu_extension.so')
+    model = cust_core.read_model('./OV_model/FP32/GridSample.xml')
+    model.reshape({"input": "1, ?, ?, ?", "input1": "1, ?, 1, 2"})
+    compile_model = cust_core.compile_model(model, OV_DEVICE)
+    infer_request = compile_model.create_infer_request()
+
     uv = uv.transpose(1, 2)  # [B, N, 2]
     uv = uv.unsqueeze(2)  # [B, N, 1, 2]
-    samples = torch.nn.functional.grid_sample(feat, uv, align_corners=True)  # [B, C, N, 1]
-    return samples[:, :, :, 0]  # [B, C, N]
+    uv_shape = uv.shape[1]
+    feat_shape = feat.shape
+
+    input_tensor_shape = Tensor(compile_model.input('input').element_type, feat_shape)
+    input_tensor_shape1 = Tensor(compile_model.input('input1').element_type, [1, uv_shape, 1, 2])
+    infer_request.set_input_tensor(0, input_tensor_shape)
+    infer_request.set_input_tensor(1, input_tensor_shape1)
+    
+    input_tensor = {'input': feat.cpu().numpy(), 'input1': uv.cpu().numpy()}
+    infer_request.infer(input_tensor)
+    result = infer_request.get_output_tensor()
+    #res = compile_model.infer_new_request({0:feat.cpu().numpy(), 1:uv.cpu().numpy()})
+    ov = torch.tensor(result.data).to(DEVICE)
+    
+    #samples = torch.nn.functional.grid_sample(feat, uv, align_corners=True)  # [B, C, N, 1]
+    #print(torch.sum(ov - samples))
+    return ov[:, :, :, 0]  # [B, C, N]
 
 def orthogonal(points, calibrations):
     rot = calibrations[:, :3, :3]
@@ -242,6 +264,7 @@ class HGPIFuNet(nn.Module):
         SC = self.core.read_model(self.SC_path)
         SC.reshape("1, 257, ?")
         self.SC = self.core.compile_model(SC, self.device_name)
+        
     # replacing normalizer class member to class function.
     def normalizer(self, z):
         z_feat = z * (512 // 2) / Z_SIZE
@@ -315,8 +338,8 @@ class HGPIFuNet(nn.Module):
         return self.preds
 
 if __name__ == '__main__':
-    IMAGE_PATH = './input_images\\ryota.png'
-    MASK_PATH = './input_images\\ryota_mask.png'
+    IMAGE_PATH = './input_images/ryota.png'
+    MASK_PATH = './input_images/ryota_mask.png'
 
     data = load_image(IMAGE_PATH, MASK_PATH)
 
