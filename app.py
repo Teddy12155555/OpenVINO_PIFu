@@ -1,5 +1,4 @@
 import os
-
 from PIL import Image
 from skimage import measure
 import numpy as np
@@ -7,7 +6,6 @@ import timeit
 import torch
 import torch.nn as nn
 from torchvision import transforms
-
 from openvino.runtime import Core, Tensor
 
 
@@ -190,7 +188,6 @@ def index(feat, uv):
         input_tensor = {'input': feat.cpu().numpy(), 'input1': uv.cpu().numpy()}
         infer_request.infer(input_tensor)
         result = infer_request.get_output_tensor()
-        #res = compile_model.infer_new_request({0:feat.cpu().numpy(), 1:uv.cpu().numpy()})
         ov = torch.tensor(result.data).to(DEVICE)
         return ov[:, :, :, 0]
     else:

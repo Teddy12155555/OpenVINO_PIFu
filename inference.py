@@ -16,7 +16,7 @@ RESOLUTION = 256
 TEST_FOLDER_PATH = "./input_images"
 RESULTS_PATH = "./results"
 Z_SIZE = 200.0
-DEVICE = 'cpu'
+DEVICE = 'cuda'
 OV_DEVICE = 'CPU'
 HGFITER = './OV_model/FP16//HGFilter.xml'
 SC = './OV_model/FP16/SurfaceClassifier.xml'
@@ -144,6 +144,7 @@ def reconstruction(net, cuda, calib_tensor,
                    resolution, b_min, b_max,
                    use_octree=False, num_samples=10000):
     print('Start to 3D reconstruction...')
+    print(cuda)
     coords, mat = create_grid(resolution, resolution, resolution,b_min, b_max)
     def eval_func(points):
         points = np.expand_dims(points, axis=0)
@@ -232,9 +233,8 @@ def gen_mesh(net, cuda, data, save_path, use_octree=True):
         print(e)
         print('Can not create marching cubes at this time.')
 
-class HGPIFuNet(nn.Module):
+class HGPIFuNet:
     def __init__(self):
-        super(HGPIFuNet, self).__init__()
         self.name = 'hgpifu'
         
         self.index = index
@@ -276,11 +276,12 @@ class HGPIFuNet(nn.Module):
         return z_feat
 
     def filter(self, images): 
-        st = timeit.default_timer()
-        input_tensor = images.cpu().numpy()
-        self.time_benchmark += timeit.default_timer() - st
         
+        input_tensor = images.cpu().numpy()
+        
+        st = timeit.default_timer()
         results = self.HGF.infer_new_request({0: input_tensor})
+        print('HGFilter Time : ', timeit.default_timer() - st)
         
         st = timeit.default_timer()
         for i, (k, v) in enumerate(results.items()):
@@ -318,12 +319,14 @@ class HGPIFuNet(nn.Module):
             input_tensor_shape = Tensor(self.SC.input().element_type, [1, 257, dy_shape])
             infer_request.set_input_tensor(input_tensor_shape)
             
-            st = timeit.default_timer()
-            input_tensor = point_local_feat.cpu().numpy()
-            self.time_benchmark += timeit.default_timer() - st
             
+            input_tensor = point_local_feat.cpu().numpy()
+            
+            
+            st = timeit.default_timer()
             infer_request.infer([input_tensor])
             result = infer_request.get_output_tensor()
+            print('SC Time :', timeit.default_timer() - st)
             
             st = timeit.default_timer()
             result_ten = torch.Tensor(result.data).to(DEVICE)
@@ -342,13 +345,23 @@ class HGPIFuNet(nn.Module):
     def get_preds(self):
         return self.preds
 
+
+def Create3DModel(body_image_path,body_mask_path):
+    data = load_image(body_image_path, body_mask_path)
+    netG = HGPIFuNet()
+    save_path ="./output.obj"
+    st = timeit.default_timer()
+    gen_mesh(netG, DEVICE, data, save_path=save_path, use_octree=True)
+    print('Time Cost: ', timeit.default_timer() - st)
+    
+
 if __name__ == '__main__':
     IMAGE_PATH = './input_images/ryota.png'
     MASK_PATH = './input_images/ryota_mask.png'
 
     data = load_image(IMAGE_PATH, MASK_PATH)
 
-    netG = HGPIFuNet().to(device=DEVICE)
+    netG = HGPIFuNet()
 
     save_path = '%s/%s/result_notebook_version_%s.obj' % (RESULTS_PATH, NAME, data['name'])
     st = timeit.default_timer()
