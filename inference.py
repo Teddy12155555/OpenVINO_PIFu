@@ -1,5 +1,4 @@
 import os
-
 from PIL import Image
 from skimage import measure
 import numpy as np
@@ -7,7 +6,6 @@ import timeit
 import torch
 import torch.nn as nn
 from torchvision import transforms
-
 from openvino.runtime import Core, Tensor
 
 
@@ -16,7 +14,7 @@ RESOLUTION = 256
 TEST_FOLDER_PATH = "./input_images"
 RESULTS_PATH = "./results"
 Z_SIZE = 200.0
-DEVICE = 'cuda'
+DEVICE = 'cpu'
 OV_DEVICE = 'CPU'
 HGFITER = './OV_model/FP16//HGFilter.xml'
 SC = './OV_model/FP16/SurfaceClassifier.xml'
@@ -46,7 +44,7 @@ def load_image(image_path, mask_path):
     image = Image.open(image_path).convert('RGB')
     image = self_transforms(image)
     image = mask.expand_as(image) * image
-    # Return JSON 
+    # Return JSON
     return {
         'name': img_name,
         'img': image.unsqueeze(0),
@@ -56,17 +54,20 @@ def load_image(image_path, mask_path):
         'b_max': B_MAX,
     }
 
+
 def save_obj_mesh_with_color(mesh_path, verts, faces, colors):
     print('Saving model ...')
     file = open(mesh_path, 'w')
 
     for idx, v in enumerate(verts):
         c = colors[idx]
-        file.write('v %.4f %.4f %.4f %.4f %.4f %.4f\n' % (v[0], v[1], v[2], c[0], c[1], c[2]))
+        file.write('v %.4f %.4f %.4f %.4f %.4f %.4f\n' %
+                   (v[0], v[1], v[2], c[0], c[1], c[2]))
     for f in faces:
         f_plus = f + 1
         file.write('f %d %d %d\n' % (f_plus[0], f_plus[2], f_plus[1]))
     file.close()
+
 
 def batch_eval(points, eval_func, num_samples=512 * 512 * 512):
     num_pts = points.shape[1]
@@ -77,11 +78,13 @@ def batch_eval(points, eval_func, num_samples=512 * 512 * 512):
         sdf[i * num_samples:i * num_samples + num_samples] = eval_func(
             points[:, i * num_samples:i * num_samples + num_samples])
     if num_pts % num_samples:
-        sdf[num_batches * num_samples:] = eval_func(points[:, num_batches * num_samples:])
+        sdf[num_batches *
+            num_samples:] = eval_func(points[:, num_batches * num_samples:])
 
     return sdf
 
-def eval_grid_octree(coords, eval_func,init_resolution=64, threshold=0.01,num_samples=512 * 512 * 512):
+
+def eval_grid_octree(coords, eval_func, init_resolution=64, threshold=0.01, num_samples=512 * 512 * 512):
     resolution = coords.shape[1:4]
 
     sdf = np.zeros(resolution)
@@ -95,11 +98,11 @@ def eval_grid_octree(coords, eval_func,init_resolution=64, threshold=0.01,num_sa
         grid_mask[0:resolution[0]:reso, 0:resolution[1]:reso, 0:resolution[2]:reso] = True
         test_mask = np.logical_and(grid_mask, dirty)
         points = coords[:, test_mask]
-        
+
         sdf[test_mask] = batch_eval(points, eval_func, num_samples=num_samples)
-        
+
         dirty[test_mask] = False
-        
+
         # do interpolation
         if reso <= 1:
             break
@@ -121,11 +124,13 @@ def eval_grid_octree(coords, eval_func,init_resolution=64, threshold=0.01,num_sa
                     v_max = v.max()
                     # this cell is all the same
                     if (v_max - v_min) < threshold:
-                        sdf[x:x + reso, y:y + reso, z:z + reso] = (v_max + v_min) / 2
+                        sdf[x:x + reso, y:y + reso, z:z +
+                            reso] = (v_max + v_min) / 2
                         dirty[x:x + reso, y:y + reso, z:z + reso] = False
         reso //= 2
 
     return sdf.reshape(resolution)
+
 
 def create_grid(resX, resY, resZ, b_min=np.array([0, 0, 0]), b_max=np.array([1, 1, 1])):
     coords = np.mgrid[:resX, :resY, :resZ]
@@ -140,29 +145,30 @@ def create_grid(resX, resY, resZ, b_min=np.array([0, 0, 0]), b_max=np.array([1, 
     coords = coords.reshape(3, resX, resY, resZ)
     return coords, coords_matrix
 
+
 def reconstruction(net, cuda, calib_tensor,
                    resolution, b_min, b_max,
                    use_octree=False, num_samples=10000):
     print('Start to 3D reconstruction...')
-    print(cuda)
-    coords, mat = create_grid(resolution, resolution, resolution,b_min, b_max)
+    coords, mat = create_grid(resolution, resolution, resolution, b_min, b_max)
+
     def eval_func(points):
         points = np.expand_dims(points, axis=0)
         points = np.repeat(points, net.num_views, axis=0)
         samples = torch.from_numpy(points).to(device=cuda).float()
         net.query(samples, calib_tensor)
-        
+
         pred = net.get_preds()[0][0]
         return pred.detach().cpu().numpy()
-        #return pred
+        # return pred
 
     # Then we evaluate the grid
-    
+
     sdf = eval_grid_octree(coords, eval_func, num_samples=num_samples)
 
     # Finally we do marching cubes
-    #try:
-    verts, faces, normals, values = measure.marching_cubes_lewiner(sdf, 0.5)
+    # try:
+    verts, faces, normals, values = measure.marching_cubes(sdf, 0.5,method="lewiner")
     # transform verts into world coordinate system
     verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
     verts = verts.T
@@ -170,6 +176,7 @@ def reconstruction(net, cuda, calib_tensor,
     # except:
     #     print('error cannot marching cubes')
     #     return -1
+
 
 def index(feat, uv):
     uv = uv.transpose(1, 2)  # [B, N, 2]
@@ -183,26 +190,32 @@ def index(feat, uv):
         infer_request = compile_model.create_infer_request()
         uv_shape = uv.shape[1]
         feat_shape = feat.shape
-        input_tensor_shape = Tensor(compile_model.input('input').element_type, feat_shape)
-        input_tensor_shape1 = Tensor(compile_model.input('input1').element_type, [1, uv_shape, 1, 2])
+        input_tensor_shape = Tensor(
+            compile_model.input('input').element_type, feat_shape)
+        input_tensor_shape1 = Tensor(compile_model.input(
+            'input1').element_type, [1, uv_shape, 1, 2])
         infer_request.set_input_tensor(0, input_tensor_shape)
         infer_request.set_input_tensor(1, input_tensor_shape1)
-    
-        input_tensor = {'input': feat.cpu().numpy(), 'input1': uv.cpu().numpy()}
+
+        input_tensor = {'input': feat.cpu().numpy(),
+                        'input1': uv.cpu().numpy()}
         infer_request.infer(input_tensor)
         result = infer_request.get_output_tensor()
         #res = compile_model.infer_new_request({0:feat.cpu().numpy(), 1:uv.cpu().numpy()})
         ov = torch.tensor(result.data).to(DEVICE)
         return ov[:, :, :, 0]
     else:
-        samples = torch.nn.functional.grid_sample(feat, uv, align_corners=True)  # [B, C, N, 1]
+        samples = torch.nn.functional.grid_sample(
+            feat, uv, align_corners=True)  # [B, C, N, 1]
         return samples[:, :, :, 0]
+
 
 def orthogonal(points, calibrations):
     rot = calibrations[:, :3, :3]
     trans = calibrations[:, :3, 3:4]
     pts = torch.baddbmm(trans, rot, points)  # [B, 3, N]
     return pts
+
 
 def gen_mesh(net, cuda, data, save_path, use_octree=True):
     image_tensor = data['img'].to(device=cuda)
@@ -211,7 +224,7 @@ def gen_mesh(net, cuda, data, save_path, use_octree=True):
     net.filter(image_tensor)
     b_min = data['b_min']
     b_max = data['b_max']
-    
+
     try:
         verts, faces, _, _ = reconstruction(
             net,
@@ -222,8 +235,9 @@ def gen_mesh(net, cuda, data, save_path, use_octree=True):
             b_max,
             use_octree=use_octree
         )
-            
-        verts_tensor = torch.from_numpy(verts.T).unsqueeze(0).to(device=cuda).float()
+
+        verts_tensor = torch.from_numpy(
+            verts.T).unsqueeze(0).to(device=cuda).float()
         xyz_tensor = net.projection(verts_tensor, calib_tensor[:1])
         uv = xyz_tensor[:, :2, :]
         color = index(image_tensor[:1], uv).detach().cpu().numpy()[0].T
@@ -233,10 +247,11 @@ def gen_mesh(net, cuda, data, save_path, use_octree=True):
         print(e)
         print('Can not create marching cubes at this time.')
 
+
 class HGPIFuNet:
     def __init__(self):
         self.name = 'hgpifu'
-        
+
         self.index = index
         self.projection = orthogonal
 
@@ -251,13 +266,13 @@ class HGPIFuNet:
         self.HGF_path = HGFITER
         self.SC_path = SC
         self.OV_int()
-        
+
         self.im_feat_list = []
         self.tmpx = None
         self.normx = None
 
         self.intermediate_preds_list = []
-        
+
         self.time_benchmark = 0
 
     def OV_int(self):
@@ -269,20 +284,18 @@ class HGPIFuNet:
         self.SC = self.core.compile_model(SC, self.device_name)
 
         print('Init OpenVINO....')
-        
+
     # replacing normalizer class member to class function.
     def normalizer(self, z):
         z_feat = z * (512 // 2) / Z_SIZE
         return z_feat
 
-    def filter(self, images): 
-        
+    def filter(self, images):
+
         input_tensor = images.cpu().numpy()
-        
-        st = timeit.default_timer()
+
         results = self.HGF.infer_new_request({0: input_tensor})
-        print('HGFilter Time : ', timeit.default_timer() - st)
-        
+
         st = timeit.default_timer()
         for i, (k, v) in enumerate(results.items()):
             if i == 3:
@@ -291,50 +304,45 @@ class HGPIFuNet:
                 self.tmpx = torch.tensor(v).to(DEVICE)
             if i == 5:
                 self.normx = torch.tensor(v).to(DEVICE)
-        
+
         self.time_benchmark += timeit.default_timer() - st
 
         self.im_feat_list = [temp]
-               
+
     def query(self, points, calibs):
         xyz = self.projection(points, calibs)
         xy = xyz[:, :2, :]
         z = xyz[:, 2:3, :]
 
-        in_img = (xy[:, 0] >= -1.0) & (xy[:, 0] <= 1.0) & (xy[:, 1] >= -1.0) & (xy[:, 1] <= 1.0)
-        
+        in_img = (xy[:, 0] >= -1.0) & (xy[:, 0] <=
+                                       1.0) & (xy[:, 1] >= -1.0) & (xy[:, 1] <= 1.0)
+
         z_feat = self.normalizer(z)
 
         self.intermediate_preds_list = []
         infer_request = self.SC.create_infer_request()
-       
+
         for im_feat in self.im_feat_list:
             # [B, Feat_i + z, N]
             point_local_feat_list = [self.index(im_feat, xy), z_feat]
-            
+
             point_local_feat = torch.cat(point_local_feat_list, 1)
-            
+
             dy_shape = point_local_feat.shape[2]
 
-            input_tensor_shape = Tensor(self.SC.input().element_type, [1, 257, dy_shape])
+            input_tensor_shape = Tensor(
+                self.SC.input().element_type, [1, 257, dy_shape])
             infer_request.set_input_tensor(input_tensor_shape)
-            
-            
+
             input_tensor = point_local_feat.cpu().numpy()
-            
-            
-            st = timeit.default_timer()
+
             infer_request.infer([input_tensor])
             result = infer_request.get_output_tensor()
-            print('SC Time :', timeit.default_timer() - st)
-            
-            st = timeit.default_timer()
+
             result_ten = torch.Tensor(result.data).to(DEVICE)
-            self.time_benchmark += timeit.default_timer() - st
-            
-            pred = in_img[:,None].float() * result_ten
-            
-            
+
+            pred = in_img[:, None].float() * result_ten
+
             self.intermediate_preds_list.append(pred)
 
         self.preds = self.intermediate_preds_list[-1]
@@ -346,14 +354,14 @@ class HGPIFuNet:
         return self.preds
 
 
-def Create3DModel(body_image_path,body_mask_path):
-    data = load_image(body_image_path, body_mask_path)
+def Create3DModel(image_path, mask_path,model_path):
+    data = load_image(image_path, mask_path)
     netG = HGPIFuNet()
-    save_path ="./output.obj"
+    save_path = model_path
     st = timeit.default_timer()
     gen_mesh(netG, DEVICE, data, save_path=save_path, use_octree=True)
     print('Time Cost: ', timeit.default_timer() - st)
-    
+
 
 if __name__ == '__main__':
     IMAGE_PATH = './input_images/ryota.png'
@@ -363,7 +371,8 @@ if __name__ == '__main__':
 
     netG = HGPIFuNet()
 
-    save_path = '%s/%s/result_notebook_version_%s.obj' % (RESULTS_PATH, NAME, data['name'])
+    save_path = '%s/%s/result_notebook_version_%s.obj' % (
+        RESULTS_PATH, NAME, data['name'])
     st = timeit.default_timer()
     gen_mesh(netG, DEVICE, data, save_path=save_path, use_octree=True)
     print('Time Cost: ', timeit.default_timer() - st)
